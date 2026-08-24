@@ -1,0 +1,10 @@
+{
+  "name": "wppa-auto-import",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Direct WP Photo Album Plus importer and OneDrive description scraper",
+  "repository": "github:stevenahampton/wppa-auto-import",
+  "dependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

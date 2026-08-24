@@ -1,0 +1,21 @@
+# Local dependencies and caches
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Runtime state
+*.log
+*.lock
+*.completed
+onedrive-scraper-state/
+
+# Local configuration and credentials
+.env
+*.env
+!.env.example
+credentials.env
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
