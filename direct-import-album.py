@@ -148,6 +148,14 @@ def display_text(value):
     return clean_text(value).replace('0022', '"')
 
 
+def is_original_filename(value):
+    return bool(re.fullmatch(
+        r'(?:IMG|VID|MVI|MOV|DSC|PICT)[_-]?\d{4,14}|P\d{4,8}',
+        display_text(value),
+        re.IGNORECASE,
+    ))
+
+
 def find_existing_photo(album_id, source_file):
     exact = mysql_scalar(
         f"SELECT id FROM {PHOTOS_TABLE} WHERE album={album_id} "
@@ -745,7 +753,8 @@ def refresh_default_description(photo_id, source_file):
     if media_key(current_name) == media_key(raw_stem) and current_name != stem:
         mysql_exec(f"UPDATE {PHOTOS_TABLE} SET name='{esc(stem)}',sname='{slugify(stem)}' WHERE id={photo_id}")
     if friendly_date and '@@BR@@' not in current:
-        description = f'{current or stem}@@BR@@{friendly_date}'
+        description_base = '' if is_original_filename(current_base) else (current or stem)
+        description = f'{description_base}@@BR@@{friendly_date}' if description_base else 'w#exiftaken'
         mysql_exec(
             f"UPDATE {PHOTOS_TABLE} SET description='{esc(description)}' WHERE id={photo_id}"
         )
@@ -792,7 +801,7 @@ def main():
 
         exif_dt = friendly_dt_from_exif(source_file)
         exif_desc = exif_description(source_file)
-        description_parts = [part for part in [exif_desc or clean_text(stem), exif_dt] if part]
+        description_parts = [part for part in [exif_desc, exif_dt] if part]
         description = '\n'.join(description_parts)
         exifdtm = sortable_datetime(source_file)
 
