@@ -115,6 +115,10 @@ add_action( 'wp_footer', function () {
 		}
 
 		document.addEventListener( 'DOMContentLoaded', initCaptionOverlays );
+		window.addEventListener( 'pageshow', initCaptionOverlays );
+		document.addEventListener( 'visibilitychange', function () {
+			if ( ! document.hidden ) initCaptionOverlays();
+		} );
 		new MutationObserver( function ( mutations ) {
 			if ( mutations.some( function ( mutation ) { return mutation.addedNodes.length; } ) ) {
 				initCaptionOverlays();
