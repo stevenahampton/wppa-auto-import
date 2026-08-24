@@ -150,7 +150,7 @@ def display_text(value):
 
 def is_original_filename(value):
     return bool(re.fullmatch(
-        r'(?:IMG|VID|MVI|MOV|DSC|PICT)[_-]?\d{4,14}|P\d{4,8}',
+        r'(?:\d{8,14}[_-])?(?:IMG|VID|MVI|MOV|DSC|PICT)[_-]?[A-Z0-9]{0,14}(?:[ _-]\d+)?|(?:\d{8,14}[_-])?P\d{4,8}|\d{10,14}(?:[ _-]\d+)?|copilot_image_\d{6,20}|[0-9a-f]{8,20}|[0-9a-f]{8}-[0-9a-f-]{27,}|image(?:[ _-]\d+)?|\d{8}_\d{6}(?:_[0-9a-f]{8,})?|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}|\d{8}\(\d{3}\)',
         display_text(value),
         re.IGNORECASE,
     ))
@@ -269,7 +269,7 @@ def sortable_datetime(path):
         (6, '%Y%m'),
         (4, '%Y'),
     ):
-        match = re.match(rf'^(\d{{{width}}})', path.stem)
+        match = re.match(rf'^(\d{{{width}}})(?!\d)', path.stem)
         if not match:
             continue
         try:
