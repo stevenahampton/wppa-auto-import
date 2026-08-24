@@ -233,6 +233,20 @@ def sortable_datetime(path):
     except Exception:
         pass
 
+    try:
+        output = subprocess.check_output(
+            ['exiftool', '-j', '-n', '-EXIF:DateTimeOriginal', str(path)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        raw_dt = json.loads(output)[0].get('DateTimeOriginal', '')
+        if raw_dt:
+            return datetime.strptime(
+                str(raw_dt).strip(), '%Y:%m:%d %H:%M:%S'
+            ).strftime('%Y:%m:%d %H:%M:%S')
+    except (IndexError, KeyError, TypeError, ValueError, subprocess.SubprocessError):
+        pass
+
     for width, date_format in (
         (14, '%Y%m%d%H%M%S'),
         (8, '%Y%m%d'),
@@ -705,8 +719,8 @@ def refresh_default_description(photo_id, source_file):
     current_base = current.split('@@BR@@', 1)[0]
     if media_key(current_name) == media_key(raw_stem) and current_name != stem:
         mysql_exec(f"UPDATE {PHOTOS_TABLE} SET name='{esc(stem)}',sname='{slugify(stem)}' WHERE id={photo_id}")
-    if friendly_date and (not current or media_key(current_base) == media_key(raw_stem)):
-        description = f'{stem}@@BR@@{friendly_date}'
+    if friendly_date and '@@BR@@' not in current:
+        description = f'{current or stem}@@BR@@{friendly_date}'
         mysql_exec(
             f"UPDATE {PHOTOS_TABLE} SET description='{esc(description)}' WHERE id={photo_id}"
         )
