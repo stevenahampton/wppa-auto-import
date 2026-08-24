@@ -88,6 +88,9 @@ add_action( 'wp_footer', function () {
 
 		function initCaptionOverlays() {
 			document.querySelectorAll( '.wppa-thumb-text' ).forEach( function ( caption ) {
+				if ( caption.innerHTML.indexOf( '@@BR@@' ) !== -1 ) {
+					caption.innerHTML = caption.innerHTML.replace( /@@BR@@/g, '<br>' );
+				}
 				if ( caption.parentElement ) makeCaptionHost( caption.parentElement );
 			} );
 
@@ -112,7 +115,11 @@ add_action( 'wp_footer', function () {
 		}
 
 		document.addEventListener( 'DOMContentLoaded', initCaptionOverlays );
-		setInterval( initCaptionOverlays, 1500 );
+		new MutationObserver( function ( mutations ) {
+			if ( mutations.some( function ( mutation ) { return mutation.addedNodes.length; } ) ) {
+				initCaptionOverlays();
+			}
+		} ).observe( document.documentElement, { childList: true, subtree: true } );
 	}());
 	</script>
 	<?php
