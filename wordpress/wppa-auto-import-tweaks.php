@@ -31,9 +31,11 @@ function wppa_auto_import_filter_output( $html ) {
 	return $html;
 }
 
-add_action( 'template_redirect', function () {
-	ob_start( 'wppa_auto_import_filter_output' );
-}, 0 );
+add_action( 'init', function () {
+	if ( ! is_admin() || wp_doing_ajax() ) {
+		ob_start( 'wppa_auto_import_filter_output' );
+	}
+}, PHP_INT_MIN );
 
 add_action( 'wp_head', function () {
 	?>
@@ -91,6 +93,7 @@ add_action( 'wp_footer', function () {
 				if ( caption.innerHTML.indexOf( '@@BR@@' ) !== -1 ) {
 					caption.innerHTML = caption.innerHTML.replace( /@@BR@@/g, '<br>' );
 				}
+				if ( ! caption.textContent.trim() ) return;
 				if ( caption.parentElement ) makeCaptionHost( caption.parentElement );
 			} );
 
@@ -119,11 +122,28 @@ add_action( 'wp_footer', function () {
 		document.addEventListener( 'visibilitychange', function () {
 			if ( ! document.hidden ) initCaptionOverlays();
 		} );
-		new MutationObserver( function ( mutations ) {
-			if ( mutations.some( function ( mutation ) { return mutation.addedNodes.length; } ) ) {
+		var captionTimer = 0;
+		var captionObserver = new MutationObserver( function ( mutations ) {
+			var hasWppaContent = mutations.some( function ( mutation ) {
+				return Array.prototype.some.call( mutation.addedNodes, function ( node ) {
+					return node.nodeType === 1 && (
+						node.matches( '.wppa-container, .wppa-thumb-area, [id^="thumbnail_frame_"]' ) ||
+						node.querySelector( '.wppa-container, .wppa-thumb-area, [id^="thumbnail_frame_"]' )
+					);
+				} );
+			} );
+			if ( ! hasWppaContent ) return;
+			window.clearTimeout( captionTimer );
+			captionTimer = window.setTimeout( function () {
+				captionObserver.disconnect();
 				initCaptionOverlays();
-			}
-		} ).observe( document.documentElement, { childList: true, subtree: true } );
+				captionObserver.takeRecords();
+				captionObserver.observe( document.body, { childList: true, subtree: true } );
+			}, 50 );
+		} );
+		if ( document.body ) {
+			captionObserver.observe( document.body, { childList: true, subtree: true } );
+		}
 	}());
 	</script>
 	<?php

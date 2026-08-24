@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -156,11 +157,18 @@ def find_existing_photo(album_id, source_file):
         return int(exact)
 
     source_key = media_key(source_file.name)
+    def canonical_extension(value):
+        extension = clean_text(value).lower().lstrip('.')
+        return 'jpg' if extension in {'jpg', 'jpeg'} else extension
+
     source_is_video = source_file.suffix.lower() in VIDEO_EXTS
+    source_extension = canonical_extension(source_file.suffix)
     for photo_id, name, filename, ext in mysql_rows(
         f"SELECT id,name,filename,ext FROM {PHOTOS_TABLE} WHERE album={album_id}"
     ):
         if source_is_video != (ext == 'xxx'):
+            continue
+        if not source_is_video and canonical_extension(ext) != source_extension:
             continue
         if source_key in {media_key(name), media_key(filename)}:
             return int(photo_id)
@@ -363,6 +371,9 @@ VALUES
 
 
 def insert_exif_rows(photo_id, source_file):
+    if photo_id < 1:
+        raise ValueError('photo_id must be a positive WPPA photo ID')
+
     requested_fields = [
         'EXIF:Make', 'EXIF:Model', 'EXIF:LensModel', 'EXIF:ExposureTime',
         'EXIF:FNumber', 'EXIF:ISO', 'EXIF:FocalLength',
@@ -427,6 +438,8 @@ def insert_exif_rows(photo_id, source_file):
         if numerator is None or denominator is None:
             fraction = Fraction(str(float(value))).limit_denominator(1000000)
             numerator, denominator = fraction.numerator, fraction.denominator
+        if not denominator:
+            raise ValueError('Invalid zero-denominator rational')
         return f'{numerator}/{denominator}'
 
     def php_serialize(values):
@@ -574,30 +587,38 @@ def insert_exif_rows(photo_id, source_file):
 
     location = None
     if gps and all(tag in gps for tag in (1, 2, 3, 4)):
-        latitude_ref = clean_text(gps[1]).upper()
-        longitude_ref = clean_text(gps[3]).upper()
-        latitude = tuple(gps[2])
-        longitude = tuple(gps[4])
-        latitude_formatted = formatted_degrees(latitude, latitude_ref)
-        longitude_formatted = formatted_degrees(longitude, longitude_ref)
-        latitude_decimal = decimal_degrees(latitude, latitude_ref)
-        longitude_decimal = decimal_degrees(longitude, longitude_ref)
-        location = (
-            f'{latitude_formatted}/{longitude_formatted}/'
-            f'{latitude_decimal:.7f}/{longitude_decimal:.7f}'
-        )
-        labels.update({
-            'G#0001': 'GPSLatitudeRef:',
-            'G#0002': 'GPSLatitude:',
-            'G#0003': 'GPSLongitudeRef:',
-            'G#0004': 'GPSLongitude:',
-        })
-        rows.update({
-            'G#0001': (latitude_ref, 'North' if latitude_ref == 'N' else 'South'),
-            'G#0002': (php_serialize(latitude), latitude_formatted[2:]),
-            'G#0003': (longitude_ref, 'East' if longitude_ref == 'E' else 'West'),
-            'G#0004': (php_serialize(longitude), longitude_formatted[2:]),
-        })
+        try:
+            latitude_ref = clean_text(gps[1]).upper()
+            longitude_ref = clean_text(gps[3]).upper()
+            latitude = tuple(gps[2])
+            longitude = tuple(gps[4])
+            coordinates = [float(value) for value in (*latitude, *longitude)]
+            if latitude_ref not in {'N', 'S'} or longitude_ref not in {'E', 'W'}:
+                raise ValueError('Invalid GPS reference')
+            if len(latitude) != 3 or len(longitude) != 3 or not all(math.isfinite(value) for value in coordinates):
+                raise ValueError('Invalid GPS coordinates')
+            latitude_formatted = formatted_degrees(latitude, latitude_ref)
+            longitude_formatted = formatted_degrees(longitude, longitude_ref)
+            latitude_decimal = decimal_degrees(latitude, latitude_ref)
+            longitude_decimal = decimal_degrees(longitude, longitude_ref)
+            location = (
+                f'{latitude_formatted}/{longitude_formatted}/'
+                f'{latitude_decimal:.7f}/{longitude_decimal:.7f}'
+            )
+            labels.update({
+                'G#0001': 'GPSLatitudeRef:',
+                'G#0002': 'GPSLatitude:',
+                'G#0003': 'GPSLongitudeRef:',
+                'G#0004': 'GPSLongitude:',
+            })
+            rows.update({
+                'G#0001': (latitude_ref, 'North' if latitude_ref == 'N' else 'South'),
+                'G#0002': (php_serialize(latitude), latitude_formatted[2:]),
+                'G#0003': (longitude_ref, 'East' if longitude_ref == 'E' else 'West'),
+                'G#0004': (php_serialize(longitude), longitude_formatted[2:]),
+            })
+        except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+            gps = None
 
     if not rows:
         return False
@@ -684,6 +705,10 @@ def process_video(photo_id, source_file, ext):
 def refresh_thumbnail(photo_id, source_file):
     managed_thumb = THUMBS / f'{photo_id}.jpg'
     try:
+        if managed_thumb.exists():
+            with Image.open(managed_thumb) as existing_thumb:
+                if max(existing_thumb.size) >= THUMB_FILE_SIZE:
+                    return
         if source_file.suffix.lower() in PHOTO_EXTS:
             resize_image(source_file, managed_thumb, THUMB_FILE_SIZE, THUMB_FILE_SIZE)
         elif source_file.suffix.lower() in VIDEO_EXTS:
