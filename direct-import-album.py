@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import hashlib
 import json
 import math
@@ -23,7 +24,9 @@ PARENT_ALBUM_ID = int(os.environ.get('WPPA_PARENT_ALBUM_ID', '12'))
 PARENT_ALBUM_NAME = os.environ.get('WPPA_PARENT_ALBUM_NAME', 'Photo Albums 2015 onwards')
 OWNER = os.environ.get('WPPA_OWNER', 'gullisland')
 PHOTO_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
-VIDEO_EXTS = {'.mp4', '.ogv', '.webm', '.mov', '.avi', '.mkv', '.flv'}
+VIDEO_EXTS = {'.mp4', '.m4v', '.ogv', '.webm', '.mov', '.avi', '.mkv', '.flv'}
+# WPPA only serves these video containers; anything else is remuxed on import.
+WPPA_VIDEO_EXTS = {'mp4', 'ogv', 'webm'}
 AUDIO_EXTS = {'.mp3', '.wav', '.ogg'}
 DOC_EXTS = {'.pdf'}
 SUPPORTED_EXTS = PHOTO_EXTS | VIDEO_EXTS | AUDIO_EXTS | DOC_EXTS
@@ -33,6 +36,11 @@ THUMBSIZE = 90
 THUMB_FILE_SIZE = 240
 CUSTOM_EXIF_TAGS = None
 CUSTOM_EXIF_LABELS = None
+# Visibility written by the photo manager as XMP-pm:wppa_status.
+STATUS_TAG = 'XMP-pm:wppa_status'
+VALID_STATUSES = {'publish', 'private', 'hidden'}
+DEFAULT_PHOTO_STATUS = 'publish'
+DEFAULT_ALBUM_STATUS = os.environ.get('WPPA_NEW_ALBUM_STATUS', 'publish')
 
 
 def wordpress_config():
@@ -308,6 +316,19 @@ def friendly_dt_from_exif(path):
     return ''
 
 
+def photo_status(path):
+    try:
+        value = subprocess.check_output(
+            ['exiftool', '-s3', f'-{STATUS_TAG}', str(path)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.SubprocessError:
+        return DEFAULT_PHOTO_STATUS
+    value = clean_text(value).lower()
+    return value if value in VALID_STATUSES else DEFAULT_PHOTO_STATUS
+
+
 def exif_description(path):
     try:
         with Image.open(path) as img:
@@ -339,7 +360,10 @@ def resize_image(src, dst, max_w, max_h):
         return img.size
 
 
-def ensure_album(album_name):
+def ensure_album(album_name, new_album_status=None):
+    status = new_album_status or DEFAULT_ALBUM_STATUS
+    if status not in VALID_STATUSES:
+        raise SystemExit(f'Invalid album status: {status}')
     existing = mysql_scalar(
         f"SELECT id FROM {ALBUMS_TABLE} WHERE name='{esc(album_name)}' ORDER BY id DESC LIMIT 1"
     )
@@ -355,7 +379,7 @@ def ensure_album(album_name):
 INSERT INTO {ALBUMS_TABLE}
 (id,name,description,a_order,main_photo,a_parent,p_order_by,cover_linktype,cover_linkpage,owner,timestamp,modified,upload_limit,alt_thumbsize,default_tags,cover_type,suba_order_by,views,cats,scheduledtm,crypt,custom,treecounts,wmfile,wmpos,indexdtm,sname,zoomable,displayopts,upload_limit_tree,scheduledel,status,cover_link,max_children,rml_id,usedby,capability)
 VALUES
-({album_id},'{esc(album_name)}','',0,0,{PARENT_ALBUM_ID},7,'content',0,'{OWNER}',UNIX_TIMESTAMP(),UNIX_TIMESTAMP(),'0/0','0','','','',2,'','', '{random_crypt()}','', 'a:11:{{i:0;s:1:"0";i:1;s:1:"0";i:2;s:1:"0";i:3;s:1:"0";i:4;s:1:"0";i:5;s:1:"0";i:6;s:1:"0";i:7;s:1:"0";i:8;s:1:"0";i:9;s:1:"0";i:10;s:1:"0";}}','','',UNIX_TIMESTAMP(),'{slugify(album_name)}','','0,0,0,0','0','','publish','','0','','','');
+({album_id},'{esc(album_name)}','',0,0,{PARENT_ALBUM_ID},7,'content',0,'{OWNER}',UNIX_TIMESTAMP(),UNIX_TIMESTAMP(),'0/0','0','','','',2,'','', '{random_crypt()}','', 'a:11:{{i:0;s:1:"0";i:1;s:1:"0";i:2;s:1:"0";i:3;s:1:"0";i:4;s:1:"0";i:5;s:1:"0";i:6;s:1:"0";i:7;s:1:"0";i:8;s:1:"0";i:9;s:1:"0";i:10;s:1:"0";}}','','',UNIX_TIMESTAMP(),'{slugify(album_name)}','','0,0,0,0','0','','{status}','','0','','','');
 """
     mysql_exec_file(sql)
     return album_id, True
@@ -365,15 +389,17 @@ def next_photo_id():
     return int(mysql_scalar(f"SELECT COALESCE(MAX(id),0)+1 FROM {PHOTOS_TABLE}"))
 
 
-def insert_photo(photo_id, album_id, ext, name, description, filename, exifdtm, photox=0, photoy=0, thumbx=0, thumby=0, videox=0, videoy=0, duration=''):
+def insert_photo(photo_id, album_id, ext, name, description, filename, exifdtm, photox=0, photoy=0, thumbx=0, thumby=0, videox=0, videoy=0, duration='', status=DEFAULT_PHOTO_STATUS):
     description = description.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '@@BR@@')
     desc_expr = f"'{esc(description)}'"
+    if status not in VALID_STATUSES:
+        status = DEFAULT_PHOTO_STATUS
 
     sql = f"""
 INSERT INTO {PHOTOS_TABLE}
 (id,album,ext,name,description,p_order,mean_rating,linkurl,linktitle,linktarget,owner,timestamp,status,rating_count,tags,alt,filename,modified,location,views,page_id,exifdtm,videox,videoy,thumbx,thumby,photox,photoy,scheduledtm,custom,stereo,crypt,clicks,magickstack,scheduledel,indexdtm,panorama,sname,dlcount,thumblock,duration,angle,rml_id,usedby,misc,sourcex,sourcey)
 VALUES
-({photo_id},{album_id},'{esc(ext)}','{esc(name)}',{desc_expr},0,'','','','_self','{OWNER}',UNIX_TIMESTAMP(),'publish',0,'','','{esc(filename)}',UNIX_TIMESTAMP(),'',0,0,'{esc(exifdtm)}',{videox},{videoy},{thumbx},{thumby},{photox},{photoy},'','',0,'{random_crypt()}',0,'','','',0,'{slugify(name)}',0,0,'{esc(duration)}',0,'','','',0,0);
+({photo_id},{album_id},'{esc(ext)}','{esc(name)}',{desc_expr},0,'','','','_self','{OWNER}',UNIX_TIMESTAMP(),'{status}',0,'','','{esc(filename)}',UNIX_TIMESTAMP(),'',0,0,'{esc(exifdtm)}',{videox},{videoy},{thumbx},{thumby},{photox},{photoy},'','',0,'{random_crypt()}',0,'','','',0,'{slugify(name)}',0,0,'{esc(duration)}',0,'','','',0,0);
 """
     mysql_exec_file(sql)
 
@@ -680,14 +706,39 @@ def process_photo(photo_id, source_file, ext):
     return photox, photoy, thumbx, thumby
 
 
+def convert_video(source_file, destination):
+    remux = [
+        'ffmpeg', '-y', '-i', str(source_file), '-c', 'copy',
+        '-movflags', '+faststart', str(destination),
+    ]
+    transcode = [
+        'ffmpeg', '-y', '-i', str(source_file),
+        '-c:v', 'libx264', '-preset', 'medium', '-crf', '20',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', '+faststart', str(destination),
+    ]
+    for command in (remux, transcode):
+        try:
+            subprocess.check_call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except subprocess.SubprocessError:
+            destination.unlink(missing_ok=True)
+    print(f'warning: could not convert {source_file.name} to mp4', file=sys.stderr)
+    return False
+
+
 def process_video(photo_id, source_file, ext):
-    managed_video = UPLOADS / f'{photo_id}.{ext}'
+    managed_ext = ext if ext in WPPA_VIDEO_EXTS else 'mp4'
+    managed_video = UPLOADS / f'{photo_id}.{managed_ext}'
     managed_poster = UPLOADS / f'{photo_id}.jpg'
     managed_thumb = THUMBS / f'{photo_id}.jpg'
     managed_video.parent.mkdir(parents=True, exist_ok=True)
     managed_poster.parent.mkdir(parents=True, exist_ok=True)
     managed_thumb.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_file, managed_video)
+    if managed_ext == ext:
+        shutil.copy2(source_file, managed_video)
+    else:
+        convert_video(source_file, managed_video)
 
     videox = 1280
     videoy = 720
@@ -760,6 +811,15 @@ def refresh_default_description(photo_id, source_file):
         )
 
 
+def refresh_status(photo_id, source_file):
+    status = photo_status(source_file)
+    current = mysql_scalar(f'SELECT status FROM {PHOTOS_TABLE} WHERE id={photo_id}')
+    if current != status:
+        mysql_exec(
+            f"UPDATE {PHOTOS_TABLE} SET status='{status}' WHERE id={photo_id}"
+        )
+
+
 def refresh_sortable_datetime(photo_id, source_file):
     exifdtm = sortable_datetime(source_file)
     if exifdtm:
@@ -769,15 +829,27 @@ def refresh_sortable_datetime(photo_id, source_file):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit('Usage: direct-import-album.py "Album Folder Name"')
+    parser = argparse.ArgumentParser(
+        description='Import a single OneDrive album folder into WPPA.'
+    )
+    parser.add_argument('album_name', help='Folder name under WPPA_SOURCE_ROOT.')
+    parser.add_argument(
+        '--new-album-status', choices=sorted(VALID_STATUSES),
+        default=DEFAULT_ALBUM_STATUS,
+        help='Status applied to an album created by this run (default: %(default)s).',
+    )
+    parser.add_argument(
+        '--skip-existing', action='store_true',
+        help='Skip metadata/thumbnail refresh of already-imported photos (status is still synced).',
+    )
+    args = parser.parse_args()
 
-    album_name = sys.argv[1]
+    album_name = args.album_name
     src_dir = SRC_ROOT / album_name
     if not src_dir.is_dir():
         raise SystemExit(f'Missing source album: {src_dir}')
 
-    album_id, created = ensure_album(album_name)
+    album_id, created = ensure_album(album_name, args.new_album_status)
     print(f'album_id={album_id} created={created}')
 
     media_files = sorted([p for p in src_dir.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
@@ -792,10 +864,12 @@ def main():
         stem = display_text(source_file.stem)
         existing = find_existing_photo(album_id, source_file)
         if existing:
-            refresh_sortable_datetime(existing, source_file)
-            refresh_default_description(existing, source_file)
-            refresh_thumbnail(existing, source_file)
-            insert_exif_rows(existing, source_file)
+            if not args.skip_existing:
+                refresh_sortable_datetime(existing, source_file)
+                refresh_default_description(existing, source_file)
+                refresh_thumbnail(existing, source_file)
+                insert_exif_rows(existing, source_file)
+            refresh_status(existing, source_file)
             skipped += 1
             continue
 
@@ -836,6 +910,7 @@ def main():
             videox=videox,
             videoy=videoy,
             duration=duration,
+            status=photo_status(source_file),
         )
         insert_exif_rows(photo_id, source_file)
         imported += 1

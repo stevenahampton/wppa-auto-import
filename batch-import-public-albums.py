@@ -15,7 +15,7 @@ LOCK_FILE = Path(os.environ.get('WPPA_BATCH_LOCK', TOOL_ROOT / 'public-albums.lo
 WORDPRESS_ROOT = os.environ.get('WPPA_WP_ROOT', '/var/www/wordpress')
 SUPPORTED_EXTS = {
     '.jpg', '.jpeg', '.png', '.gif', '.webp',
-    '.mp4', '.ogv', '.webm', '.mov', '.avi', '.mkv', '.flv',
+    '.mp4', '.m4v', '.ogv', '.webm', '.mov', '.avi', '.mkv', '.flv',
     '.mp3', '.wav', '.ogg', '.pdf',
 }
 ALREADY_COMPLETED = {
@@ -76,6 +76,14 @@ def main():
         '--dry-run', action='store_true',
         help='Print the queue without importing.',
     )
+    parser.add_argument(
+        '--new-album-status', choices=['publish', 'private', 'hidden'],
+        help='Status applied to albums created by this run.',
+    )
+    parser.add_argument(
+        '--skip-existing', action='store_true',
+        help='Skip metadata/thumbnail refresh of already-imported photos.',
+    )
     args = parser.parse_args()
 
     LOCK_FILE.touch(exist_ok=True)
@@ -102,11 +110,17 @@ def main():
     if args.dry_run:
         return 0
 
+    importer_options = []
+    if args.new_album_status:
+        importer_options += ['--new-album-status', args.new_album_status]
+    if args.skip_existing:
+        importer_options.append('--skip-existing')
+
     failures = []
     for index, (folder, count) in enumerate(queue, 1):
         log(f'START {index}/{len(queue)}: {folder.name} ({count} files)')
         result = subprocess.run(
-            [sys.executable, str(IMPORTER), folder.name],
+            [sys.executable, str(IMPORTER), folder.name, *importer_options],
             cwd=WORDPRESS_ROOT,
         )
         if result.returncode == 0:
