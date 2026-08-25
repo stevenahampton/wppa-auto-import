@@ -20,6 +20,38 @@ add_action( 'init', 'wppa_auto_import_mobile_options', 999 );
 add_action( 'rest_api_init', 'wppa_auto_import_mobile_options', 999 );
 add_action( 'wp', 'wppa_auto_import_mobile_options', 1 );
 
+function wppa_auto_import_refresh_random_covers() {
+	if ( ! function_exists( 'wppa_expand_enum' ) || ! function_exists( 'wppa_alb_to_enum_children' ) ) {
+		return;
+	}
+	if ( wppa_opt( 'main_photo' ) != '-3' ) return;
+	global $wpdb;
+	$refreshed_albums = [];
+	$albums = $wpdb->get_results( "SELECT id,main_photo FROM {$wpdb->wppa_albums} WHERE main_photo IN (0,-3)", ARRAY_A );
+	foreach ( $albums as $album ) {
+		$album_id = (int) $album['id'];
+		$album_ids = wppa_expand_enum( wppa_alb_to_enum_children( $album_id ) );
+		$album_ids = array_filter( array_map( 'intval', explode( ',', str_replace( '.', ',', $album_ids ) ) ) );
+		if ( empty( $album_ids ) ) $album_ids = [ (int) $album_id ];
+		$placeholders = implode( ',', array_fill( 0, count( $album_ids ), '%d' ) );
+		$random_photo = $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$wpdb->wppa_photos} WHERE album IN ($placeholders) AND status = 'publish' AND ext <> 'xxx' ORDER BY RAND() LIMIT 1",
+			$album_ids
+		) );
+		if ( $random_photo ) {
+			$wpdb->update( $wpdb->wppa_albums, [ 'main_photo' => (int) $random_photo ], [ 'id' => (int) $album_id ], [ '%d' ], [ '%d' ] );
+			$refreshed_albums[] = [ $album_id, (int) $album['main_photo'] ];
+		}
+	}
+	register_shutdown_function( function () use ( $wpdb, $refreshed_albums ) {
+		foreach ( $refreshed_albums as [ $album_id, $main_photo ] ) {
+			$wpdb->update( $wpdb->wppa_albums, [ 'main_photo' => $main_photo ], [ 'id' => $album_id ], [ '%d' ], [ '%d' ] );
+		}
+	} );
+}
+add_action( 'wp', 'wppa_auto_import_refresh_random_covers', 2 );
+add_action( 'rest_api_init', 'wppa_auto_import_refresh_random_covers', 1000 );
+
 function wppa_auto_import_filter_output( $html ) {
 	global $wpdb;
 	static $custom_exif_labels = null;
