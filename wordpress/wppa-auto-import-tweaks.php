@@ -27,7 +27,7 @@ function wppa_auto_import_refresh_random_covers() {
 	if ( wppa_opt( 'main_photo' ) != '-3' ) return;
 	global $wpdb;
 	$refreshed_albums = [];
-	$albums = $wpdb->get_results( "SELECT id,main_photo FROM {$wpdb->wppa_albums} WHERE main_photo IN (0,-3)", ARRAY_A );
+	$albums = $wpdb->get_results( "SELECT a.id,a.main_photo FROM {$wpdb->wppa_albums} a LEFT JOIN {$wpdb->wppa_photos} p ON p.id=a.main_photo WHERE a.main_photo IN (0,-3) OR p.id IS NULL OR p.status <> 'publish' OR p.ext = 'xxx'", ARRAY_A );
 	foreach ( $albums as $album ) {
 		$album_id = (int) $album['id'];
 		$album_ids = wppa_expand_enum( wppa_alb_to_enum_children( $album_id ) );
