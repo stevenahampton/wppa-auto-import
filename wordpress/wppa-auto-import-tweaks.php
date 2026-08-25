@@ -49,7 +49,7 @@ function wppa_auto_import_refresh_random_covers() {
 		}
 	} );
 }
-add_action( 'wp', 'wppa_auto_import_refresh_random_covers', 2 );
+add_action( 'wp', 'wppa_auto_import_refresh_random_covers', 99 );
 add_action( 'rest_api_init', 'wppa_auto_import_refresh_random_covers', 1000 );
 
 function wppa_auto_import_filter_output( $html ) {
