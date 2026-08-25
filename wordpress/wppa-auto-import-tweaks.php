@@ -8,6 +8,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+add_action( 'wp', function () {
+	if ( function_exists( 'wppa_initialize_runtime' ) && function_exists( 'wppa_is_mobile' ) && wppa_is_mobile() ) {
+		wppa_initialize_runtime();
+		global $wppa_opt;
+		$wppa_opt['wppa_thumbsize'] = 120;
+		$wppa_opt['wppa_thumbsize_alt'] = 120;
+	}
+}, 1 );
+
 function wppa_auto_import_filter_output( $html ) {
 	global $wpdb;
 	static $custom_exif_labels = null;
