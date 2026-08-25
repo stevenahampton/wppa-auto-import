@@ -8,14 +8,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-add_action( 'wp', function () {
+function wppa_auto_import_mobile_options() {
 	if ( function_exists( 'wppa_initialize_runtime' ) && function_exists( 'wppa_is_mobile' ) && wppa_is_mobile() ) {
 		wppa_initialize_runtime();
 		global $wppa_opt;
-		$wppa_opt['wppa_thumbsize'] = 120;
-		$wppa_opt['wppa_thumbsize_alt'] = 120;
+		$wppa_opt['wppa_thumbsize'] = 240;
+		$wppa_opt['wppa_thumbsize_alt'] = 240;
 	}
-}, 1 );
+}
+add_action( 'init', 'wppa_auto_import_mobile_options', 999 );
+add_action( 'rest_api_init', 'wppa_auto_import_mobile_options', 999 );
+add_action( 'wp', 'wppa_auto_import_mobile_options', 1 );
 
 function wppa_auto_import_filter_output( $html ) {
 	global $wpdb;
