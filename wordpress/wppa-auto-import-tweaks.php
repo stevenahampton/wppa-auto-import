@@ -40,6 +40,7 @@ function wppa_auto_import_refresh_random_covers() {
 		) );
 		if ( $random_photo ) {
 			$wpdb->update( $wpdb->wppa_albums, [ 'main_photo' => (int) $random_photo ], [ 'id' => (int) $album_id ], [ '%d' ], [ '%d' ] );
+			wppa_cache_album( 'invalidate', $album_id );
 			$refreshed_albums[] = [ $album_id, (int) $album['main_photo'] ];
 		}
 	}
