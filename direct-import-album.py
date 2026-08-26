@@ -39,8 +39,8 @@ CUSTOM_EXIF_LABELS = None
 # Visibility written by the photo manager as XMP-pm:wppa_status.
 STATUS_TAG = 'XMP-pm:wppa_status'
 VALID_STATUSES = {'publish', 'private', 'hidden'}
-DEFAULT_PHOTO_STATUS = 'publish'
-DEFAULT_ALBUM_STATUS = os.environ.get('WPPA_NEW_ALBUM_STATUS', 'publish')
+DEFAULT_PHOTO_STATUS = 'hidden'
+DEFAULT_ALBUM_STATUS = os.environ.get('WPPA_NEW_ALBUM_STATUS', 'hidden')
 
 
 def wordpress_config():
@@ -793,10 +793,15 @@ def refresh_thumbnail(photo_id, source_file):
 
 
 def refresh_default_description(photo_id, source_file):
-    rows = mysql_rows(f'SELECT name,description FROM {PHOTOS_TABLE} WHERE id={photo_id}')
+    rows = mysql_rows(
+        f"SELECT CONCAT(HEX(name), ':', HEX(COALESCE(description, ''))) "
+        f'FROM {PHOTOS_TABLE} WHERE id={photo_id}'
+    )
     if not rows:
         return
-    current_name, current = rows[0]
+    encoded_name, encoded_description = rows[0][0].split(':', 1)
+    current_name = bytes.fromhex(encoded_name).decode('utf-8', errors='replace')
+    current = bytes.fromhex(encoded_description).decode('utf-8', errors='replace')
     raw_stem = clean_text(source_file.stem)
     stem = display_text(raw_stem)
     friendly_date = friendly_dt_from_exif(source_file)
