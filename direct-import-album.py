@@ -880,7 +880,13 @@ def main():
 
         exif_dt = friendly_dt_from_exif(source_file)
         exif_desc = exif_description(source_file)
-        description_parts = [part for part in [exif_desc, exif_dt] if part]
+        # WPPA expands this marker to the EXIF date; appending the same date
+        # creates a duplicated date in the rendered photo description.
+        description_parts = [] if exif_desc.lower() == 'w#exiftaken' else [exif_desc]
+        if exif_dt and not description_parts:
+            description_parts = ['w#exiftaken']
+        elif exif_dt:
+            description_parts.append(exif_dt)
         description = '\n'.join(description_parts)
         exifdtm = sortable_datetime(source_file)
 
