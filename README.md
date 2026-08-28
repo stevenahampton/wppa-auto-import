@@ -36,14 +36,8 @@ python3 -m pip install -r requirements.txt
 npm install
 ```
 
-Install the optional frontend integration:
-
-```bash
-cp wordpress/wppa-auto-import-tweaks.php \
-  /path/to/wordpress/wp-content/mu-plugins/
-```
-
-If an existing MU plugin already implements these display tweaks, merge the relevant functions instead of loading both.
+Frontend integration is maintained separately in the WordPress site's
+`wp-content/mu-plugins/site-tweaks.php` file and is versioned in `~/config`.
 
 ## Configuration
 
@@ -141,14 +135,13 @@ Run `--reset-state` once after the initial bulk import so the first scheduled ru
 
 ### Scheduling
 
-The unit in `systemd/` runs the incremental import after the nightly `rclone-backup.service` finishes successfully, using an `OnSuccess=` drop-in rather than a separate timer:
+Systemd units and the rclone drop-in are maintained separately in `~/config/systemd`.
+The nightly import runs after `rclone-backup.service` finishes successfully, using an
+`OnSuccess=` drop-in rather than a separate timer:
 
 ```bash
-sudo cp systemd/wppa-nightly-import.service /etc/systemd/system/
-sudo mkdir -p /etc/systemd/system/rclone-backup.service.d
-sudo cp systemd/rclone-backup.service.d/10-wppa-nightly-import.conf \
-  /etc/systemd/system/rclone-backup.service.d/
-sudo systemctl daemon-reload
+cd ~/config
+sudo ./install.sh
 ```
 
 The service is triggered by the sync, so it is not enabled against a target. Check it with:
