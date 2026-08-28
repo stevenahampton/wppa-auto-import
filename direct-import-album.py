@@ -38,6 +38,7 @@ CUSTOM_EXIF_TAGS = None
 CUSTOM_EXIF_LABELS = None
 # Visibility written by the photo manager as XMP-pm:wppa_status.
 STATUS_TAG = 'XMP-pm:wppa_status'
+TAGS_TAG = 'XMP-pm:wppa_tags'
 VALID_STATUSES = {'publish', 'private', 'hidden'}
 DEFAULT_PHOTO_STATUS = 'hidden'
 DEFAULT_ALBUM_STATUS = os.environ.get('WPPA_NEW_ALBUM_STATUS', 'hidden')
@@ -329,6 +330,23 @@ def photo_status(path):
     return value if value in VALID_STATUSES else DEFAULT_PHOTO_STATUS
 
 
+def photo_tags(path):
+    try:
+        value = subprocess.check_output(
+            ['exiftool', '-s3', f'-{TAGS_TAG}', str(path)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.SubprocessError:
+        return None
+    tags = []
+    for tag in clean_text(value).split(','):
+        tag = tag.strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return ',' + ','.join(tags) + ',' if tags else ''
+
+
 def exif_description(path):
     try:
         with Image.open(path) as img:
@@ -389,7 +407,7 @@ def next_photo_id():
     return int(mysql_scalar(f"SELECT COALESCE(MAX(id),0)+1 FROM {PHOTOS_TABLE}"))
 
 
-def insert_photo(photo_id, album_id, ext, name, description, filename, exifdtm, photox=0, photoy=0, thumbx=0, thumby=0, videox=0, videoy=0, duration='', status=DEFAULT_PHOTO_STATUS):
+def insert_photo(photo_id, album_id, ext, name, description, filename, exifdtm, photox=0, photoy=0, thumbx=0, thumby=0, videox=0, videoy=0, duration='', status=DEFAULT_PHOTO_STATUS, tags=''):
     description = description.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '@@BR@@')
     desc_expr = f"'{esc(description)}'"
     if status not in VALID_STATUSES:
@@ -399,7 +417,7 @@ def insert_photo(photo_id, album_id, ext, name, description, filename, exifdtm, 
 INSERT INTO {PHOTOS_TABLE}
 (id,album,ext,name,description,p_order,mean_rating,linkurl,linktitle,linktarget,owner,timestamp,status,rating_count,tags,alt,filename,modified,location,views,page_id,exifdtm,videox,videoy,thumbx,thumby,photox,photoy,scheduledtm,custom,stereo,crypt,clicks,magickstack,scheduledel,indexdtm,panorama,sname,dlcount,thumblock,duration,angle,rml_id,usedby,misc,sourcex,sourcey)
 VALUES
-({photo_id},{album_id},'{esc(ext)}','{esc(name)}',{desc_expr},0,'','','','_self','{OWNER}',UNIX_TIMESTAMP(),'{status}',0,'','','{esc(filename)}',UNIX_TIMESTAMP(),'',0,0,'{esc(exifdtm)}',{videox},{videoy},{thumbx},{thumby},{photox},{photoy},'','',0,'{random_crypt()}',0,'','','',0,'{slugify(name)}',0,0,'{esc(duration)}',0,'','','',0,0);
+({photo_id},{album_id},'{esc(ext)}','{esc(name)}',{desc_expr},0,'','','','_self','{OWNER}',UNIX_TIMESTAMP(),'{status}',0,'{esc(tags)}','','{esc(filename)}',UNIX_TIMESTAMP(),'',0,0,'{esc(exifdtm)}',{videox},{videoy},{thumbx},{thumby},{photox},{photoy},'','',0,'{random_crypt()}',0,'','','',0,'{slugify(name)}',0,0,'{esc(duration)}',0,'','','',0,0);
 """
     mysql_exec_file(sql)
 
@@ -825,6 +843,14 @@ def refresh_status(photo_id, source_file):
         )
 
 
+def refresh_tags(photo_id, source_file):
+    tags = photo_tags(source_file)
+    if tags is not None:
+        mysql_exec(
+            f"UPDATE {PHOTOS_TABLE} SET tags='{esc(tags)}' WHERE id={photo_id}"
+        )
+
+
 def refresh_sortable_datetime(photo_id, source_file):
     exifdtm = sortable_datetime(source_file)
     if exifdtm:
@@ -875,6 +901,7 @@ def main():
                 refresh_thumbnail(existing, source_file)
                 insert_exif_rows(existing, source_file)
             refresh_status(existing, source_file)
+            refresh_tags(existing, source_file)
             skipped += 1
             continue
 
@@ -922,6 +949,7 @@ def main():
             videoy=videoy,
             duration=duration,
             status=photo_status(source_file),
+            tags=photo_tags(source_file) or '',
         )
         insert_exif_rows(photo_id, source_file)
         imported += 1

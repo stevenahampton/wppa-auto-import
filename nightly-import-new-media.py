@@ -63,10 +63,12 @@ def save_state(state):
     tmp_path.replace(STATE_FILE)
 
 
-def changed_folders(state):
+def changed_folders(state, folder_prefix=''):
     pending = []
     for folder in sorted(SRC_ROOT.iterdir(), key=lambda item: item.name.casefold()):
         if not folder.is_dir():
+            continue
+        if folder_prefix and not folder.name.startswith(folder_prefix):
             continue
         inventory = folder_inventory(folder)
         if not inventory:
@@ -93,6 +95,10 @@ def main():
         '--reset-state', action='store_true',
         help='Record the current inventory as the baseline without importing.',
     )
+    parser.add_argument(
+        '--folder-prefix', default='',
+        help='Only inspect album folders whose names start with this prefix.',
+    )
     args = parser.parse_args()
 
     if not SRC_ROOT.is_dir():
@@ -106,7 +112,7 @@ def main():
         raise SystemExit('Another nightly import is already running.')
 
     state = load_state()
-    pending = changed_folders(state)
+    pending = changed_folders(state, args.folder_prefix)
 
     if args.reset_state:
         for folder, inventory, _added, _is_new in pending:
