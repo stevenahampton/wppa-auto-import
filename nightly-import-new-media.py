@@ -76,8 +76,12 @@ def changed_folders(state, folder_prefix=''):
         known = state.get(folder.name)
         if known == inventory:
             continue
-        added = sorted(set(inventory) - set(known or {}))
-        pending.append((folder, inventory, added, known is None))
+        known = known or {}
+        changed = sorted(
+            name for name, fingerprint in inventory.items()
+            if known.get(name) != fingerprint
+        )
+        pending.append((folder, inventory, changed, folder.name not in state))
     return pending
 
 
@@ -126,18 +130,18 @@ def main():
         return 0
 
     log(f'{len(pending)} folder(s) with new or changed media:')
-    for folder, inventory, added, is_new in pending:
+    for folder, inventory, changed, is_new in pending:
         kind = 'NEW FOLDER' if is_new else 'UPDATED'
-        log(f'  {kind}: {folder.name} ({len(added)} new of {len(inventory)} files)')
+        log(f'  {kind}: {folder.name} ({len(changed)} new or changed of {len(inventory)} files)')
 
     if args.dry_run:
         return 0
 
     failures = []
-    for index, (folder, inventory, added, is_new) in enumerate(pending, 1):
+    for index, (folder, inventory, changed, is_new) in enumerate(pending, 1):
         options = ['--new-album-status', NEW_ALBUM_STATUS]
         if not args.full_refresh:
-            options.append('--skip-existing')
+            options.extend( '--file=' + name for name in changed )
         log(f'START {index}/{len(pending)}: {folder.name}')
         result = subprocess.run(
             [sys.executable, str(IMPORTER), folder.name, *options],

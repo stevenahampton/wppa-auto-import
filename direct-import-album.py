@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime
-from difflib import get_close_matches
 from fractions import Fraction
 from pathlib import Path
 
@@ -40,7 +39,7 @@ CUSTOM_EXIF_LABELS = None
 STATUS_TAG = 'XMP-pm:wppa_status'
 TAGS_TAG = 'XMP-pm:wppa_tags'
 VALID_STATUSES = {'publish', 'private', 'hidden'}
-DEFAULT_PHOTO_STATUS = 'hidden'
+DEFAULT_PHOTO_STATUS = 'private'
 DEFAULT_ALBUM_STATUS = os.environ.get('WPPA_NEW_ALBUM_STATUS', 'hidden')
 
 
@@ -272,6 +271,15 @@ def sortable_datetime(path):
     except (IndexError, KeyError, TypeError, ValueError, subprocess.SubprocessError):
         pass
 
+    filename_datetime = re.search(r'(?<!\d)(\d{8})[_-](\d{6})(?!\d)', path.stem)
+    if filename_datetime:
+        try:
+            return datetime.strptime(
+                ''.join(filename_datetime.groups()), '%Y%m%d%H%M%S'
+            ).strftime('%Y:%m:%d %H:%M:%S')
+        except ValueError:
+            pass
+
     for width, date_format in (
         (14, '%Y%m%d%H%M%S'),
         (8, '%Y%m%d'),
@@ -298,15 +306,6 @@ def sortable_datetime(path):
             f'{month_year.group(1)} {month_year.group(2)}', '%B %Y'
         ).strftime('%Y:%m:%d %H:%M:%S')
 
-    if path.suffix.lower() in VIDEO_EXTS:
-        photo_stems = {
-            candidate.stem: candidate
-            for candidate in path.parent.iterdir()
-            if candidate.is_file() and candidate.suffix.lower() in PHOTO_EXTS
-        }
-        matches = get_close_matches(path.stem, photo_stems, n=1, cutoff=0.45)
-        if matches:
-            return sortable_datetime(photo_stems[matches[0]])
     return ''
 
 
@@ -348,6 +347,18 @@ def photo_tags(path):
 
 
 def exif_description(path):
+    for metadata_tag in ('XMP-dc:Description', 'QuickTime:Description', 'Description'):
+        try:
+            value = subprocess.check_output(
+                ['exiftool', '-s3', f'-{metadata_tag}', str(path)],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            value = clean_text(value)
+            if value:
+                return value
+        except subprocess.SubprocessError:
+            continue
     try:
         with Image.open(path) as img:
             exif = img.getexif()
@@ -871,7 +882,11 @@ def main():
     )
     parser.add_argument(
         '--skip-existing', action='store_true',
-        help='Skip metadata/thumbnail refresh of already-imported photos (status is still synced).',
+        help='Skip all updates to already-imported photos.',
+    )
+    parser.add_argument(
+        '--file', action='append', default=[],
+        help='Import or refresh only this filename; may be supplied multiple times.',
     )
     args = parser.parse_args()
 
@@ -884,6 +899,12 @@ def main():
     print(f'album_id={album_id} created={created}')
 
     media_files = sorted([p for p in src_dir.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
+    if args.file:
+        requested_files = {Path(name).name for name in args.file}
+        media_files = [p for p in media_files if p.name in requested_files]
+        missing_files = requested_files - {p.name for p in media_files}
+        if missing_files:
+            raise SystemExit(f'Missing supported source file(s): {", ".join(sorted(missing_files))}')
     if not media_files:
         raise SystemExit('No supported media files found')
 
@@ -895,11 +916,13 @@ def main():
         stem = display_text(source_file.stem)
         existing = find_existing_photo(album_id, source_file)
         if existing:
-            if not args.skip_existing:
-                refresh_sortable_datetime(existing, source_file)
-                refresh_default_description(existing, source_file)
-                refresh_thumbnail(existing, source_file)
-                insert_exif_rows(existing, source_file)
+            if args.skip_existing:
+                skipped += 1
+                continue
+            refresh_sortable_datetime(existing, source_file)
+            refresh_default_description(existing, source_file)
+            refresh_thumbnail(existing, source_file)
+            insert_exif_rows(existing, source_file)
             refresh_status(existing, source_file)
             refresh_tags(existing, source_file)
             skipped += 1
