@@ -399,7 +399,7 @@ def ensure_album(album_name, new_album_status=None):
     if existing:
         album_id = int(existing)
         mysql_exec(
-            f"UPDATE {ALBUMS_TABLE} SET a_parent={PARENT_ALBUM_ID},p_order_by=7 WHERE id={album_id}"
+            f"UPDATE {ALBUMS_TABLE} SET a_parent={PARENT_ALBUM_ID} WHERE id={album_id}"
         )
         return album_id, False
 
