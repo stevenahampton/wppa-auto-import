@@ -31,7 +31,7 @@ IMPORTER = Path(os.environ.get(
     'WPPA_IMPORTER',
     Path(__file__).parent / 'nightly-import-new-media.py'
 ))
-RCLONE_LOG = Path(os.environ.get('RCLONE_LOG', '/var/log/rclone-photo-manager-sync.log'))
+RCLONE_LOG = Path(os.environ.get('RCLONE_LOG', '/opt/wppa-auto-import/logs/rclone-photo-manager-sync.log'))
 PYTHON = sys.executable
 
 
