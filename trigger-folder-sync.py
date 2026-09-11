@@ -97,11 +97,13 @@ def run_wppa_import(folder_names: list[str]) -> bool:
                    folder_names, IMPORTER.exists())
         return True
     
-    # Run the importer for each folder
+    # Run the importer for each folder as www-data (the owner of
+    # wp-content/uploads/wppa) so it doesn't hit permission errors when
+    # WPPA resets that tree's directory modes back to owner-only.
     for folder in folder_names:
         cmd = [
-            PYTHON,
-            str(IMPORTER),
+            "sudo", "-n", "-u", "www-data",
+            "/opt/wppa-auto-import/run-import-as-wwwdata.sh",
             "--folder-prefix", folder,
         ]
         
