@@ -31,7 +31,7 @@ IMPORTER = Path(os.environ.get(
     'WPPA_IMPORTER',
     Path(__file__).parent / 'nightly-import-new-media.py'
 ))
-RECENT_TAG_SYNC = Path('/usr/local/bin/update-recent-tag.php')
+RECENT_TAG_SYNC = Path(os.environ.get('WPPA_RECENT_TAG_SYNC', '/var/www/wordpress/bin/update-recent-tag.php'))
 RCLONE_LOG = Path(os.environ.get('RCLONE_LOG', '/opt/wppa-auto-import/logs/rclone-photo-manager-sync.log'))
 PYTHON = sys.executable
 
