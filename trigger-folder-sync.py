@@ -31,6 +31,7 @@ IMPORTER = Path(os.environ.get(
     'WPPA_IMPORTER',
     Path(__file__).parent / 'nightly-import-new-media.py'
 ))
+RECENT_TAG_SYNC = Path('/usr/local/bin/update-recent-tag.php')
 RCLONE_LOG = Path(os.environ.get('RCLONE_LOG', '/opt/wppa-auto-import/logs/rclone-photo-manager-sync.log'))
 PYTHON = sys.executable
 
@@ -128,7 +129,20 @@ def run_wppa_import(folder_names: list[str]) -> bool:
         except Exception as e:
             log.error("Failed to run WPPA import for %s: %s", folder, e)
             return False
-    
+
+    try:
+        result = subprocess.run(
+            ["php", str(RECENT_TAG_SYNC)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        log.info("Recent tag sync completed: %s", result.stdout.strip())
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as e:
+        log.error("Recent tag sync failed: %s", e)
+        return False
+
     return True
 
 
